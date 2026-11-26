@@ -889,7 +889,7 @@ function showData(){
     '<p style="color:var(--muted);font-size:13px">網站檔案只放精簡資料，不含科別、姓名、銀行承辦人電話與 AI 金鑰。</p></div>';
   bd+='<button class="btn pri" id="btnImport">① 匯入新月份資料（電腦版主檔 HTML）</button>';
   var pc=FULL&&FULL.pdf&&FULL.pdf.files?Object.keys(FULL.pdf.files).length:0,base=(FULL&&FULL.pdf&&FULL.pdf.base)||'pdf';
-  bd+='<div class="card data-p" style="margin-top:10px"><p><b>產品說明書</b>'+(pc?'：已連結 <b class="num">'+fmt(pc)+'</b> 份':'：尚未連結')+'</p>'+
+  bd+='<div class="card data-p" style="margin-top:10px"><p><b>產品說明書</b>'+(pc?'：已對應 <b class="num">'+fmt(pc)+'</b> 份'+(FULL.pdf.auto?'（自動從 GitHub 找到）':''):'：尚未對應')+'</p><p class="sm">放在 GitHub 網站上時，網頁會自動讀取「'+esc(base)+'」資料夾裡的說明書，通常不用做②；②是給在電腦本機打開時用的。</p>'+
     '<label class="lab2">GitHub 上放說明書的資料夾名稱<input id="pdfBase" class="fin" type="text" value="'+esc(base)+'"></label>'+
     '<p class="sm" style="margin-top:6px">網址會是「網站網址/'+esc(base)+'/檔名.pdf」。這裡只記錄檔名，不會把 PDF 放進 index.html；沒有密碼的人看不到尚未生效專案的說明書按鈕。</p>'+
     '<button class="btn sec" id="btnPdf">② '+(pc?'重新連結':'連結')+'電腦上的說明書資料夾</button>'+(pc?'<button class="btn sec" id="btnPdfClr" style="color:var(--up)">取消連結說明書</button>':'')+'</div>';
@@ -928,7 +928,27 @@ function linkPdf(files){
   closeSheet();rebuild();toast('已連結 '+fmt(n)+' 份說明書，對應到 '+fmt(hit)+' 筆申報紀錄');
 }
 
-// ---------- 匯出網站用檔案（機敏資料加密） ----------
+// ---------- 在 GitHub 網站上自動找出 pdf 資料夾裡的說明書 ----------
+async function autoPdf(){
+  var h=location.hostname;if(!/\.github\.io$/i.test(h))return;
+  var owner=h.split('.')[0],seg=location.pathname.split('/').filter(Boolean),repo=seg.length&&!/\.html?$/i.test(seg[0])?seg[0]:h;
+  var base=((FULL.pdf&&FULL.pdf.base)||'pdf').replace(/^\/+|\/+$/g,''),ck='cbc_pdfauto_'+owner+'_'+repo+'_'+base,list=null;
+  try{var c=JSON.parse(lsGet(ck)||'null');if(c&&Date.now()-c.t<30*60*1000)list=c.f}catch(e){}
+  if(!list){
+    try{var r=await fetch('https://api.github.com/repos/'+encodeURIComponent(owner)+'/'+encodeURIComponent(repo)+'/git/trees/HEAD?recursive=1',{headers:{'Accept':'application/vnd.github+json'}});
+      if(!r.ok)return;var j=await r.json();var pre=base+'/';
+      list=(j.tree||[]).filter(function(t){return t.type==='blob'&&t.path.indexOf(pre)===0}).map(function(t){return t.path.slice(pre.length)}).filter(function(n){return n.indexOf('/')<0&&/\.pdf$/i.test(n)});
+      lsSet(ck,JSON.stringify({t:Date.now(),f:list}));
+    }catch(e){return}
+  }
+  var files={},n=0;if(FULL.pdf&&FULL.pdf.files)for(var k in FULL.pdf.files)files[k]=FULL.pdf.files[k];
+  list.forEach(function(fn){var m=fn.match(PDFRX);if(m&&!files[m[2]+'_'+m[3]]){files[m[2]+'_'+m[3]]=fn;n++}});
+  if(!n)return;
+  FULL.pdf={base:base,files:files,mb:(FULL.pdf&&FULL.pdf.mb)||0,miss:0,auto:true};
+  rebuild();
+}
+
+// ---------- 匯出網站用檔案 ----------
 async function exportSite(){
   if(!S.unlocked||!FULL){toast('請先解鎖');return}
   try{
@@ -1026,6 +1046,7 @@ topH();window.addEventListener('resize',topH);
   try{var d=await IDB.get('data');var emb=FULL.savedAt||'';
     if(d&&d.recs){if(String(d.savedAt||'')>=String(emb)){d._own=true;d.full=true;if(d.pwh)PWH=d.pwh;FULL=d;rebuild(d.targetMonth)}else{IDB.del('data')}}}catch(e){}
   var pw=lsGet('cbc_pw');if(pw){var ok=await unlock(pw,true,true);if(!ok)lsSet('cbc_pw',null)}
+  autoPdf();
 })();
 })();
 </script>
